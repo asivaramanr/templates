@@ -1,0 +1,113 @@
+# Notice the v1beta3 version
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+# some metadata about the template itself
+metadata:
+  name: flask-AWS-lambda
+  title: Flask app on AWS Lambda.
+  description: Deploy python flask app on AWS lambda
+spec:
+  owner: platformengineering/AWS-lambda
+  type: service
+
+  # these are the steps which are rendered in the frontend with the form input
+  parameters:
+    - title: Fill in some steps
+      required:
+        - name
+      properties:
+        name:
+          title: App Name
+          type: string
+          description: Unique name for the app
+          ui:autofocus: true
+          ui:options:
+            rows: 5
+    - title: Choose a  Repo location
+      required:
+        - repoUrl
+      properties:
+        repoUrl:
+          title: Repository Location
+          type: string
+          ui:field: RepoUrlPicker
+          ui:options:
+            allowedHosts:
+              - github.kyndryl.net
+              - github.com
+              - gitlab.com
+    - title: AWS configurations
+      required:
+        - FunctionsName
+        - region
+        - action
+      properties:
+        FunctionsName:
+          title: Functions Name
+          type: string
+          description: The name of your AWS Functions
+          ui:autofocus: true
+        region:
+          title: AWS Region
+          type: string
+          description: AWS region where you want to deploy functions.
+          enum:
+            - us-east-1
+            - us-east-2
+            - us-west-1
+            - us-west-2
+        action:
+          title: Actions
+          type: string
+          description: Actions to perform (create/delete)
+          enum:
+            - create
+            - delete
+
+  # here's the steps that are executed in series in the scaffolder backend
+  steps:
+    - id: fetch-base
+      name: Fetch Base
+      action: fetch:template
+      input:
+        url: ./content
+        values:
+          name: ${{ parameters.name }}
+    # Publish the content to github repository
+    - id: publish
+      name: Publish
+      action: publish:github
+      input:
+        allowedHosts: ["github.com", github.kyndryl.net', "gitlab.com"]
+        description: This is ${{ parameters.name }}
+        repoUrl: ${{ parameters.repoUrl }}
+
+    # Trriger the github Actions to deploy AWS Lanbda
+    - id: github-actions
+      name: Trigger github actions
+      action: github:actions:dispatch
+      input:
+        workflowId: deploy-labda.yml
+        repoUrl: github.com?repo=aws-lambda&owwner=AswinSivaraman1
+        branchorTagname: "release"
+        workflowInputs:
+          FunctionsName: ${{ parameters.FunctionsName }}
+          awsRegion: ${{ parameters.region }}
+          action: ${{ parameters.action }}
+
+    # Register the component in backstage
+    - id: register
+      name: Register
+      action: catalog:register
+      input:
+        repoContentsUrl: ${{ steps['publish'].output.repoContentsUrl }}
+        catalogInfoPath: "/catalog-info.yaml"
+
+  # some outputs which are saved along with the job for use in the frontend
+  output:
+    links:
+      - title: Repository
+        url: ${{ steps['publish'].output.remoteUrl }}
+      - title: Open in catalog
+        icon: catalog
+        entityRef: ${{ steps['register'].output.entityRef }}
